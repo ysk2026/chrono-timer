@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html class="dark bg-black" lang="ja">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+    <title>Chrono Timer</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#000000">
+    <link rel="apple-touch-icon" href="icon.png">
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Chrono">
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700;900&family=Inter:wght@300;400;500&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-highest": "#262528",
+                        "primary": "#00f1fe",
+                        "success": "#34c759",
+                        "surface-container-low": "#131315",
+                        "surface": "#0e0e10",
+                        "on-surface-variant": "#adaaad",
+                        "on-surface": "#f9f5f8",
+                    },
+                    fontFamily: {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* レビュー指摘の修正: 100vhをやめて、-webkit-fill-availableと100dvhを使用 */
+        html {
+            width: 100%;
+            height: 100%;
+            height: -webkit-fill-available;
+            background-color: #000000 !important;
+            overscroll-behavior: none;
+            touch-action: pan-y;
+        }
+        body {
+            width: 100%;
+            height: 100%;
+            min-height: 100dvh;
+            min-height: -webkit-fill-available;
+            background-color: #000000 !important;
+            margin: 0;
+            padding: 0;
+            color: #adaaad;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior: none;
+            touch-action: pan-y;
+        }
+        #root {
+            width: 100%;
+            height: 100%;
+            min-height: 100dvh;
+            background-color: #000000;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .timer-glow { text-shadow: 0 0 20px rgba(0, 241, 254, 0.4); }
+        .timer-glow-success { text-shadow: 0 0 30px rgba(52, 199, 89, 0.8); }
+        .glass-panel {
+            background: rgba(31, 31, 34, 0.85);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+        ::-webkit-scrollbar { display: none; }
+        
+        @keyframes gentlePulse {
+            0%, 100% { opacity: 0.05; }
+            50% { opacity: 0.25; }
+        }
+        .animate-gentle-pulse {
+            animation: gentlePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="bg-black text-on-surface-variant">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        const useWakeLock = () => {
+            const wakeLock = useRef(null);
+            const requestWakeLock = useCallback(async () => {
+                if ('wakeLock' in navigator) {
+                    try { wakeLock.current = await navigator.wakeLock.request('screen'); } 
+                    catch (err) { console.warn('Wake Lock error:', err); }
+                }
+            }, []);
+            const releaseWakeLock = useCallback(async () => {
+                if (wakeLock.current) {
+                    await wakeLock.current.release();
+                    wakeLock.current = null;
+                }
+            }, []);
+            return { requestWakeLock, releaseWakeLock };
+        };
+
+        const App = () => {
+            const modes = ['stopwatch', 'countdown', 'pomodoro'];
+            const [mode, setMode] = useState('stopwatch'); 
+            const [isRunning, setIsRunning] = useState(false);
+            const [elapsed, setElapsed] = useState(0); 
+            
+            const [targetHours, setTargetHours] = useState(() => (new Date().getHours() + 1) % 24); 
+            const [targetMinutes, setTargetMinutes] = useState(() => new Date().getMinutes()); 
+            const [remaining, setRemaining] = useState(0); 
+            
+            const [pomoWorkTime, setPomoWorkTime] = useState(25);
+            const [pomoShortBreak, setPomoShortBreak] = useState(5);
+            const [pomoLongBreak, setPomoLongBreak] = useState(20);
+            const [pomoCyclesSetting, setPomoCyclesSetting] = useState(4);
+            
+            const [currentPomoPhase, setCurrentPomoPhase] = useState('work'); 
+            const [currentPomoCycle, setCurrentPomoCycle] = useState(1);
+            const [pomoRemaining, setPomoRemaining] = useState(pomoWorkTime * 60);
+
+            const [currentTime, setCurrentTime] = useState("");
+            const [isTimeModalOpen, setIsTimeModalOpen] = useState(false);
+            const [isConfigDrawerOpen, setIsConfigDrawerOpen] = useState(false); 
+            const [isLandscape, setIsLandscape] = useState(false);
+            
+            const [isTimeUp, setIsTimeUp] = useState(false);
+            const [touchStartPos, setTouchStartPos] = useState(null);
+
+            const adjustTimeout = useRef(null);
+            const adjustInterval = useRef(null);
+            const timerRef = useRef(null);
+            const startTimeRef = useRef(null);
+            const { requestWakeLock, releaseWakeLock } = useWakeLock();
+            
+            const audioCtxRef = useRef(null);
+            const beepIntervalRef = useRef(null);
+
+            useEffect(() => {
+                const updateClock = () => {
+                    const now = new Date();
+                    const hh = String(now.getHours()).padStart(2, '0');
+                    const mm = String(now.getMinutes()).padStart(2, '0');
+                    setCurrentTime(`${hh}:${mm}`);
+                };
+                updateClock();
+                const clockInterval = setInterval(updateClock, 10000); 
+                return () => clearInterval(clockInterval);
+            }, []);
+
+            const calculateRemaining = useCallback(() => {
+                const now = new Date();
+                const targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), targetHours, targetMinutes, 0);
+                if (targetDate <= now) targetDate.setDate(targetDate.getDate() + 1);
+                const diffSeconds = Math.floor((targetDate - now) / 1000);
+                return diffSeconds > 0 ? diffSeconds : 0;
+            }, [targetHours, targetMinutes]);
+
+            useEffect(() => {
+                if (mode === 'countdown') {
+                    setRemaining(calculateRemaining());
+                } else if (mode === 'pomodoro') {
+                    setCurrentPomoPhase('work');
+                    setCurrentPomoCycle(1);
+                    setPomoRemaining(pomoWorkTime * 60);
+                }
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+            }, [mode]);
+
+            useEffect(() => {
+                if (mode === 'countdown' && !isRunning && !isTimeUp) {
+                    setRemaining(calculateRemaining());
+                }
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+            }, [targetHours, targetMinutes]);
+
+            useEffect(() => {
+                if (mode === 'pomodoro' && !isRunning && !isTimeUp) {
+                    if (currentPomoPhase === 'work') setPomoRemaining(pomoWorkTime * 60);
+                    else if (currentPomoPhase === 'shortBreak') setPomoRemaining(pomoShortBreak * 60);
+                    else if (currentPomoPhase === 'longBreak') setPomoRemaining(pomoLongBreak * 60);
+                }
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+            }, [pomoWorkTime, pomoShortBreak, pomoLongBreak]);
+
+            const startAlarm = () => {
+                if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                const playBeep = () => {
+                    const ctx = audioCtxRef.current;
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'square'; 
+                    osc.frequency.setValueAtTime(880, ctx.currentTime); 
+                    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+                    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.2);
+                };
+                playBeep();
+                beepIntervalRef.current = setInterval(playBeep, 500); 
+            };
+
+            const stopAlarm = () => {
+                if (beepIntervalRef.current) {
+                    clearInterval(beepIntervalRef.current);
+                    beepIntervalRef.current = null;
+                }
+                setIsTimeUp(false);
+            };
+
+            useEffect(() => {
+                if (isRunning) {
+                    requestWakeLock();
+                    if (mode === 'stopwatch') {
+                        startTimeRef.current = Date.now() - (elapsed * 1000);
+                        timerRef.current = setInterval(() => {
+                            setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+                        }, 1000);
+                    } else if (mode === 'countdown') {
+                        timerRef.current = setInterval(() => {
+                            const rem = calculateRemaining();
+                            setRemaining(rem);
+                            if (rem <= 0) {
+                                setIsRunning(false);
+                                clearInterval(timerRef.current);
+                                setIsTimeUp(true);
+                                startAlarm();
+                            }
+                        }, 1000);
+                    } else if (mode === 'pomodoro') {
+                        startTimeRef.current = Date.now() - ((getPomoPhaseTotalSeconds() - pomoRemaining) * 1000);
+                        timerRef.current = setInterval(() => {
+                            const passed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+                            const rem = getPomoPhaseTotalSeconds() - passed;
+                            setPomoRemaining(rem > 0 ? rem : 0);
+                            
+                            if (rem <= 0) {
+                                setIsRunning(false);
+                                clearInterval(timerRef.current);
+                                setIsTimeUp(true);
+                                startAlarm();
+                                
+                                if (currentPomoPhase === 'work') {
+                                    if (currentPomoCycle >= pomoCyclesSetting) {
+                                        setCurrentPomoPhase('longBreak');
+                                        setPomoRemaining(pomoLongBreak * 60);
+                                    } else {
+                                        setCurrentPomoPhase('shortBreak');
+                                        setPomoRemaining(pomoShortBreak * 60);
+                                    }
+                                } else if (currentPomoPhase === 'shortBreak') {
+                                    setCurrentPomoCycle(c => c + 1);
+                                    setCurrentPomoPhase('work');
+                                    setPomoRemaining(pomoWorkTime * 60);
+                                } else if (currentPomoPhase === 'longBreak') {
+                                    setCurrentPomoCycle(1);
+                                    setCurrentPomoPhase('work');
+                                    setPomoRemaining(pomoWorkTime * 60);
+                                }
+                            }
+                        }, 1000);
+                    }
+                } else {
+                    releaseWakeLock();
+                    if (timerRef.current) clearInterval(timerRef.current);
+                }
+                return () => clearInterval(timerRef.current);
+            }, [isRunning, mode, elapsed, pomoRemaining, currentPomoPhase, currentPomoCycle, pomoCyclesSetting, pomoWorkTime, pomoShortBreak, pomoLongBreak, calculateRemaining, requestWakeLock, releaseWakeLock]);
+
+            const getPomoPhaseTotalSeconds = () => {
+                if (currentPomoPhase === 'work') return pomoWorkTime * 60;
+                if (currentPomoPhase === 'shortBreak') return pomoShortBreak * 60;
+                return pomoLongBreak * 60;
+            };
+
+            const toggleTimer = (e) => {
+                if (e) e.stopPropagation();
+                
+                if (isTimeUp) {
+                    stopAlarm();
+                    if (mode === 'countdown') {
+                        setRemaining(calculateRemaining());
+                        return;
+                    } else if (mode === 'pomodoro') {
+                        if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                        if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+                        setIsRunning(true);
+                        return;
+                    }
+                }
+                
+                if (!isRunning) {
+                    if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+                }
+                setIsRunning(!isRunning);
+            };
+
+            const skipPomoPhase = (e) => {
+                if (e) e.stopPropagation();
+                if (isTimeUp) {
+                    stopAlarm();
+                }
+                
+                if (currentPomoPhase === 'work') {
+                    if (currentPomoCycle >= pomoCyclesSetting) {
+                        setCurrentPomoPhase('longBreak');
+                        setPomoRemaining(pomoLongBreak * 60);
+                    } else {
+                        setCurrentPomoPhase('shortBreak');
+                        setPomoRemaining(pomoShortBreak * 60);
+                    }
+                } else if (currentPomoPhase === 'shortBreak') {
+                    setCurrentPomoCycle(c => c + 1);
+                    setCurrentPomoPhase('work');
+                    setPomoRemaining(pomoWorkTime * 60);
+                } else if (currentPomoPhase === 'longBreak') {
+                    setCurrentPomoCycle(1);
+                    setCurrentPomoPhase('work');
+                    setPomoRemaining(pomoWorkTime * 60);
+                }
+            };
+
+            const resetTimer = (e) => {
+                if (e) e.stopPropagation();
+                setIsRunning(false);
+                stopAlarm();
+                if (mode === 'stopwatch') setElapsed(0);
+                else if (mode === 'countdown') setRemaining(calculateRemaining());
+                else if (mode === 'pomodoro') {
+                    setCurrentPomoPhase('work');
+                    setCurrentPomoCycle(1);
+                    setPomoRemaining(pomoWorkTime * 60);
+                }
+            };
+
+            const startAdjusting = (setter, direction, max, min = 0) => {
+                setter(prev => {
+                    let next = prev + direction;
+                    if (next > max) next = min;
+                    if (next < min) next = max;
+                    return next;
+                });
+                adjustTimeout.current = setTimeout(() => {
+                    adjustInterval.current = setInterval(() => {
+                        setter(prev => {
+                            let next = prev + direction;
+                            if (next > max) next = min;
+                            if (next < min) next = max;
+                            return next;
+                        });
+                    }, 100); 
+                }, 400);
+            };
+
+            const stopAdjusting = () => {
+                if (adjustTimeout.current) clearTimeout(adjustTimeout.current);
+                if (adjustInterval.current) clearInterval(adjustInterval.current);
+            };
+
+            const handleInputStart = (e) => {
+                if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || isTimeModalOpen || isConfigDrawerOpen) return;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                setTouchStartPos({ x: clientX, y: clientY });
+            };
+
+            const handleInputEnd = (e) => {
+                if (!touchStartPos || isTimeModalOpen || isConfigDrawerOpen || isRunning || isTimeUp) return;
+                const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+                const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+                
+                let distanceX = touchStartPos.x - clientX;
+                let distanceY = touchStartPos.y - clientY;
+
+                if (isLandscape) {
+                    const tempX = distanceX;
+                    distanceX = distanceY; 
+                    distanceY = tempX;     
+                }
+                
+                const minSwipeDistance = 50;
+                
+                if (Math.abs(distanceY) > Math.abs(distanceX) && Math.abs(distanceY) > minSwipeDistance) {
+                    setMode(prev => {
+                        const idx = modes.indexOf(prev);
+                        if (distanceY > 0) return modes[(idx + 1) % modes.length]; 
+                        return modes[(idx - 1 + modes.length) % modes.length]; 
+                    });
+                    setIsRunning(false); 
+                }
+                setTouchStartPos(null);
+            };
+
+            const formatDisplayTime = (totalSeconds) => {
+                const h = Math.floor(totalSeconds / 3600);
+                const m = Math.floor((totalSeconds % 3600) / 60);
+                const s = totalSeconds % 60;
+                if (mode === 'pomodoro' && h === 0) {
+                    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                }
+                return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            };
+
+            const displaySeconds = mode === 'stopwatch' ? elapsed : (mode === 'countdown' ? remaining : pomoRemaining);
+
+            const isBreak = mode === 'pomodoro' && (currentPomoPhase === 'shortBreak' || currentPomoPhase === 'longBreak');
+            
+            const alertBgClass = isTimeUp ? (isBreak ? 'bg-success/10' : 'bg-primary/10') : (isBreak ? 'bg-success/5' : 'bg-transparent');
+            const textGlowClass = isTimeUp ? (isBreak ? 'text-success timer-glow-success animate-pulse' : 'text-primary timer-glow animate-pulse') : (isBreak ? 'text-success timer-glow-success' : 'text-primary timer-glow');
+            const iconColorClass = isBreak ? 'text-success' : 'text-primary';
+
+            // レビュー反映：dvhを適用しつつ、ランドスケープ時はdvw/dvhを使うことでより正確にフィット
+            const containerStyle = isLandscape ? {
+                transform: 'rotate(90deg) translateY(-100%)',
+                transformOrigin: 'top left',
+                width: '100dvh',
+                height: '100dvw',
+                position: 'absolute',
+                top: 0,
+                left: 0
+            } : {
+                width: '100%',
+                height: '100%',
+                minHeight: '100dvh',
+                position: 'relative'
+            };
+
+            const NumberAdjuster = ({ label, value, setter, max, min = 1, unit = "" }) => (
+                <div className="flex items-center justify-between w-full p-4 bg-surface-container-highest/30 rounded-2xl border border-white/5">
+                    <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant/80">{label}</span>
+                    <div className="flex items-center gap-4">
+                        <button onPointerDown={() => startAdjusting(setter, -1, max, min)} onPointerUp={stopAdjusting} onPointerLeave={stopAdjusting} className="p-2 bg-surface-container-highest rounded-lg active:scale-95 touch-none"><span className="material-symbols-outlined text-sm">remove</span></button>
+                        <span className="font-headline text-xl text-primary font-bold w-10 text-center select-none">{value}<span className="text-[10px] ml-1 opacity-50">{unit}</span></span>
+                        <button onPointerDown={() => startAdjusting(setter, 1, max, min)} onPointerUp={stopAdjusting} onPointerLeave={stopAdjusting} className="p-2 bg-surface-container-highest rounded-lg active:scale-95 touch-none"><span className="material-symbols-outlined text-sm">add</span></button>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div 
+                    style={containerStyle} 
+                    className={`overflow-hidden flex flex-col transition-all duration-500 ease-in-out ${alertBgClass}`}
+                    onTouchStart={handleInputStart}
+                    onTouchEnd={handleInputEnd}
+                    onMouseDown={handleInputStart}
+                    onMouseUp={handleInputEnd}
+                >
+                    {isTimeUp && <div className={`absolute inset-0 ${isBreak ? 'bg-success' : 'bg-primary'} animate-gentle-pulse z-0 pointer-events-none mix-blend-screen opacity-50`}></div>}
+
+                    {/* --- HEADER --- */}
+                    {/* レビュー反映：padding-topにenv(safe-area-inset-top)を追加してノッチやパンチホールに対応 */}
+                    <header 
+                        className="absolute top-0 w-full flex items-center justify-between px-8 pb-8 z-30 pointer-events-none"
+                        style={{ paddingTop: 'max(2rem, env(safe-area-inset-top))' }}
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className={`material-symbols-outlined text-sm ${iconColorClass}`}>schedule</span>
+                            <span className="font-['Space_Grotesk'] font-bold tracking-widest text-lg text-white opacity-80">{currentTime}</span>
+                        </div>
+                        
+                        <div className={`pointer-events-auto flex items-center gap-2 transition-opacity duration-1000 ${isRunning || isTimeUp ? 'opacity-0' : 'opacity-100'}`}>
+                            <button onClick={() => setIsLandscape(!isLandscape)} className="p-3 bg-surface-container-highest/50 rounded-full hover:bg-primary/20 hover:text-primary transition-all active:scale-95 flex items-center justify-center border border-on-surface-variant/10">
+                                <span className={`material-symbols-outlined transition-transform duration-500 ${isLandscape ? 'rotate-90 text-primary' : ''}`}>screen_rotation_alt</span>
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* --- 左ドットインジケーター --- */}
+                    <div className={`absolute left-8 top-1/2 -translate-y-1/2 flex flex-col gap-6 z-10 pointer-events-none transition-opacity duration-1000 ${isRunning || isTimeUp ? 'opacity-0' : 'opacity-100'}`}>
+                        {modes.map((m, idx) => (
+                            <div key={m} className={`w-2 h-2 rounded-full transition-all duration-300 ${mode === m ? (isBreak ? 'bg-success drop-shadow-[0_0_8px_rgba(52,199,89,0.8)]' : 'bg-primary drop-shadow-[0_0_8px_rgba(0,242,255,0.8)]') + ' scale-125' : 'bg-surface-container-highest'}`}></div>
+                        ))}
+                    </div>
+
+                    {/* --- MAIN TIMER AREA --- */}
+                    <section className="relative w-full h-full z-10">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                            <h1 className={`font-headline text-[16vw] md:text-9xl font-bold tracking-tighter leading-none tabular-nums transition-all duration-1000 ease-[cubic-bezier(0.25,1,0.5,1)] 
+                                ${isRunning || isTimeUp ? 'scale-105 translate-y-0' : 'scale-100 -translate-y-16 md:-translate-y-24'} 
+                                ${textGlowClass}`}
+                            >
+                                {isTimeUp ? '00:00:00' : formatDisplayTime(displaySeconds)}
+                            </h1>
+                        </div>
+                        
+                        <div className={`absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-20 w-[90%] max-w-md transition-all duration-1000 ease-[cubic-bezier(0.25,1,0.5,1)] ${isRunning || isTimeUp ? 'bottom-12 md:bottom-16' : 'top-[56%] md:top-[60%]'}`}>
+                            
+                            <div className={`flex flex-col items-center gap-4 transition-all duration-1000 w-full ${isRunning || isTimeUp ? 'opacity-0 scale-90 pointer-events-none absolute' : 'opacity-100 scale-100 relative mb-6'}`}>
+                                <p className="font-label text-sm tracking-[0.4em] uppercase text-on-surface-variant/60 flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-sm">swap_vert</span>
+                                    {mode === 'stopwatch' ? 'Mode: Flow State' : (mode === 'countdown' ? 'Mode: Target Countdown' : `Mode: Pomodoro`)}
+                                </p>
+                                
+                                {mode === 'countdown' && (
+                                    <div onClick={() => setIsTimeModalOpen(true)} className="px-6 py-2 bg-primary/10 border border-primary/30 rounded-full flex items-center gap-3 cursor-pointer hover:bg-primary/20 hover:scale-105 transition-all shadow-[0_0_10px_rgba(0,241,254,0.1)] active:scale-95 pointer-events-auto">
+                                        <span className="material-symbols-outlined text-primary text-sm">edit_calendar</span>
+                                        <span className="font-label text-sm tracking-widest text-primary font-bold">TARGET {String(targetHours).padStart(2, '0')}:{String(targetMinutes).padStart(2, '0')}</span>
+                                    </div>
+                                )}
+
+                                {mode === 'pomodoro' && (
+                                    <div className="flex flex-col items-center gap-3">
+                                        <div onClick={() => setIsConfigDrawerOpen(true)} className={`px-6 py-2 border rounded-full flex items-center gap-3 cursor-pointer hover:scale-105 transition-all active:scale-95 pointer-events-auto ${isBreak ? 'bg-success/10 border-success/30 text-success shadow-[0_0_10px_rgba(52,199,89,0.1)]' : 'bg-primary/10 border-primary/30 text-primary shadow-[0_0_10px_rgba(0,241,254,0.1)]'}`}>
+                                            <span className="material-symbols-outlined text-sm">tune</span>
+                                            <span className="font-label text-sm tracking-widest font-bold">
+                                                {currentPomoPhase === 'work' ? `WORK (${currentPomoCycle}/${pomoCyclesSetting})` : (currentPomoPhase === 'shortBreak' ? 'SHORT BREAK' : 'LONG BREAK')}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className={`flex flex-wrap justify-center items-center gap-3 transition-all duration-1000 ${isRunning ? 'opacity-20 hover:opacity-100' : 'opacity-100'}`}>
+                                <button onClick={toggleTimer} className={`flex items-center gap-2 px-6 py-3 rounded-full font-headline font-bold tracking-widest text-sm transition-all duration-300 ${isTimeUp ? (isBreak ? 'bg-success text-black shadow-[0_0_20px_rgba(52,199,89,0.6)] animate-pulse' : 'bg-primary text-surface-container-lowest shadow-[0_0_20px_rgba(0,241,254,0.6)] animate-pulse') : isRunning ? 'bg-surface-container-highest text-on-surface-variant border border-on-surface-variant/30 hover:bg-surface-container-highest/80' : (isBreak ? 'bg-success text-black hover:bg-success/90 hover:shadow-[0_0_15px_rgba(52,199,89,0.4)]' : 'bg-primary text-surface-container-lowest border border-primary hover:bg-primary/90 hover:shadow-[0_0_15px_rgba(0,241,254,0.4)]')}`}>
+                                    <span className="material-symbols-outlined text-lg">{isTimeUp ? 'notifications_off' : isRunning ? 'pause' : 'play_arrow'}</span>
+                                    {isTimeUp ? 'STOP ALARM' : isRunning ? 'PAUSE' : 'START'}
+                                </button>
+
+                                {mode === 'pomodoro' && (
+                                    <button onClick={skipPomoPhase} className={`flex items-center gap-2 px-5 py-3 rounded-full font-headline font-bold tracking-widest text-sm bg-transparent border transition-all duration-300 ${isTimeUp ? 'text-white/50 border-white/20' : 'text-on-surface-variant border-on-surface-variant/30 hover:bg-on-surface-variant/10 hover:text-white'}`}>
+                                        <span className="material-symbols-outlined text-lg">skip_next</span> SKIP
+                                    </button>
+                                )}
+                                
+                                <button onClick={resetTimer} className={`flex items-center gap-2 px-5 py-3 rounded-full font-headline font-bold tracking-widest text-sm bg-transparent border transition-all duration-300 ${isTimeUp ? 'text-white/50 border-white/20' : 'text-on-surface-variant border-on-surface-variant/30 hover:bg-on-surface-variant/10 hover:text-white'}`}>
+                                    <span className="material-symbols-outlined text-lg">replay</span> RESET
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* --- TARGET TIME SETTING MODAL (Countdown用) --- */}
+                    {isTimeModalOpen && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm transition-opacity">
+                            <div className="glass-panel p-8 rounded-3xl border border-primary/20 flex flex-col items-center gap-6 shadow-[0_0_50px_rgba(0,241,254,0.1)] animate-[fadeIn_0.2s_ease-out]">
+                                <h2 className="font-headline text-primary tracking-widest font-bold flex items-center gap-2"><span className="material-symbols-outlined">flag</span> SET TARGET TIME</h2>
+                                
+                                <div className="flex items-center gap-2 bg-surface-container-highest/50 px-5 py-2 rounded-full mb-2">
+                                    <span className="material-symbols-outlined text-on-surface-variant text-sm">schedule</span>
+                                    <span className="font-label text-xs tracking-widest text-on-surface-variant">CURRENT TIME: <span className="text-white font-bold ml-1">{currentTime}</span></span>
+                                </div>
+
+                                <div className="flex items-center justify-center gap-6 bg-surface-container-lowest/50 py-6 px-4 rounded-2xl border border-white/5">
+                                    <div className="flex flex-col items-center gap-3">
+                                        <button onPointerDown={() => startAdjusting(setTargetHours, 1, 23, 0)} onPointerUp={stopAdjusting} onPointerLeave={stopAdjusting} className="p-3 text-on-surface-variant hover:text-primary transition-colors bg-surface-container-highest rounded-xl active:scale-95 shadow-inner touch-none"><span className="material-symbols-outlined pointer-events-none">expand_less</span></button>
+                                        <div className="font-headline text-5xl text-primary timer-glow tabular-nums w-16 text-center select-none">{String(targetHours).padStart(2, '0')}</div>
+                                        <button onPointerDown={() => startAdjusting(setTargetHours, -1, 23, 0)} onPointerUp={stopAdjusting} onPointerLeave={stopAdjusting} className="p-3 text-on-surface-variant hover:text-primary transition-colors bg-surface-container-highest rounded-xl active:scale-95 shadow-inner touch-none"><span className="material-symbols-outlined pointer-events-none">expand_more</span></button>
+                                    </div>
+                                    <div className="font-headline text-4xl text-primary/30 select-none pb-2">:</div>
+                                    <div className="flex flex-col items-center gap-3">
+                                        <button onPointerDown={() => startAdjusting(setTargetMinutes, 1, 59, 0)} onPointerUp={stopAdjusting} onPointerLeave={stopAdjusting} className="p-3 text-on-surface-variant hover:text-primary transition-colors bg-surface-container-highest rounded-xl active:scale-95 shadow-inner touch-none"><span className="material-symbols-outlined pointer-events-none">expand_less</span></button>
+                                        <div className="font-headline text-5xl text-primary timer-glow tabular-nums w-16 text-center select-none">{String(targetMinutes).padStart(2, '0')}</div>
+                                        <button onPointerDown={() => startAdjusting(setTargetMinutes, -1, 59, 0)} onPointerUp={stopAdjusting} onPointerLeave={stopAdjusting} className="p-3 text-on-surface-variant hover:text-primary transition-colors bg-surface-container-highest rounded-xl active:scale-95 shadow-inner touch-none"><span className="material-symbols-outlined pointer-events-none">expand_more</span></button>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsTimeModalOpen(false)} className="w-full py-4 bg-primary text-surface-container-lowest rounded-xl font-headline font-bold tracking-widest text-lg hover:bg-primary/90 hover:shadow-[0_0_15px_rgba(0,241,254,0.4)] active:scale-95 transition-all">DONE</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- POMODORO CONFIG DRAWER --- */}
+                    {isConfigDrawerOpen && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm transition-opacity">
+                            <div className="glass-panel p-6 md:p-8 rounded-3xl border border-primary/20 flex flex-col items-center gap-6 shadow-[0_0_50px_rgba(0,241,254,0.1)] w-full max-w-sm animate-[fadeIn_0.2s_ease-out] max-h-[90vh] overflow-y-auto">
+                                <h2 className="font-headline text-primary tracking-widest font-bold flex items-center gap-2"><span className="material-symbols-outlined">tune</span> POMODORO SETTINGS</h2>
+                                
+                                <div className="flex flex-col w-full gap-3">
+                                    <NumberAdjuster label="Work Duration" value={pomoWorkTime} setter={setPomoWorkTime} max={90} min={1} unit="m" />
+                                    <NumberAdjuster label="Short Break" value={pomoShortBreak} setter={setPomoShortBreak} max={30} min={1} unit="m" />
+                                    <NumberAdjuster label="Long Break" value={pomoLongBreak} setter={setPomoLongBreak} max={60} min={1} unit="m" />
+                                    <NumberAdjuster label="Cycles before Long Break" value={pomoCyclesSetting} setter={setPomoCyclesSetting} max={10} min={1} unit="c" />
+                                </div>
+
+                                <button onClick={() => setIsConfigDrawerOpen(false)} className="w-full py-4 mt-2 bg-primary text-surface-container-lowest rounded-xl font-headline font-bold tracking-widest text-lg hover:bg-primary/90 hover:shadow-[0_0_15px_rgba(0,241,254,0.4)] active:scale-95 transition-all">SAVE & CLOSE</button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden">
+                        <div className="absolute -bottom-1/4 -right-1/4 w-[80vw] h-[80vw] bg-primary/10 rounded-full blur-[120px]"></div>
+                        <div className="absolute -top-1/4 -left-1/4 w-[60vw] h-[60vw] bg-blue-500/10 rounded-full blur-[120px]"></div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js?v=' + Date.now())
+                    .then(reg => console.log('SW registered!', reg))
+                    .catch(err => console.log('SW registration failed', err));
+            });
+        }
+    </script>
+</body>
+</html>

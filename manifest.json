@@ -1,0 +1,21 @@
+{
+  "name": "Chrono Timer",
+  "short_name": "Chrono",
+  "start_url": "./index.html",
+  "display": "fullscreen", 
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "description": "Minimal Cyber Timer",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
