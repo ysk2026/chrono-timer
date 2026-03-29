@@ -226,6 +226,11 @@
                     gain.gain.setValueAtTime(0.5, ctx.currentTime);
                     gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
                     osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.2);
+
+                    // スマホのバイブレーションを鳴らす（200ミリ秒）
+                    if (navigator.vibrate) {
+                        navigator.vibrate(200);
+                    }
                 };
                 playBeep();
                 beepIntervalRef.current = setInterval(playBeep, 500); 
@@ -237,7 +242,31 @@
                     beepIntervalRef.current = null;
                 }
                 setIsTimeUp(false);
+
+                // バイブレーションを強制停止
+                if (navigator.vibrate) {
+                    navigator.vibrate(0);
+                }
             };
+
+            // 3分経過したら自動でアラームを停止し、次のフェーズへ進む
+            useEffect(() => {
+                let autoStopTimer;
+                if (isTimeUp) {
+                    autoStopTimer = setTimeout(() => {
+                        stopAlarm();
+                        // 手動で止めた時と同じように、次の動作へ自動で移行させる
+                        if (mode === 'countdown') {
+                            setRemaining(calculateRemaining());
+                        } else if (mode === 'pomodoro') {
+                            setIsRunning(true);
+                        }
+                    }, 180000); // 3分 = 180,000ミリ秒
+                }
+                return () => {
+                    if (autoStopTimer) clearTimeout(autoStopTimer);
+                };
+            }, [isTimeUp, mode, calculateRemaining]);
 
             useEffect(() => {
                 if (isRunning) {
