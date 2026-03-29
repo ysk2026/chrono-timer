@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html class="dark bg-yellow-400" lang="ja">
+<html class="dark bg-black" lang="ja">
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
     <title>Chrono Timer</title>
     
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#FFFF00">
+    <meta name="theme-color" content="#000000">
     <link rel="apple-touch-icon" href="icon.png">
 
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -46,21 +46,24 @@
         }
     </script>
     <style>
-        /* テスト用: 背景をすべてド派手な黄色（#FFFF00）にする */
+        /* レビュー指摘を完全反映: 漆黒化とdvh、-webkit-fill-availableの適用 */
         :root {
-            background-color: #FFFF00 !important;
+            background-color: #000000 !important;
         }
         html {
             width: 100vw;
-            height: 100dvh;
-            background-color: #FFFF00 !important;
+            height: 100%;
+            height: -webkit-fill-available;
+            background-color: #000000 !important;
             margin: 0;
             padding: 0;
         }
         body {
             width: 100vw;
-            height: 100dvh;
-            background-color: #FFFF00 !important;
+            height: 100%;
+            min-height: 100dvh;
+            min-height: -webkit-fill-available;
+            background-color: #000000 !important;
             margin: 0;
             padding: 0;
             color: #adaaad;
@@ -75,7 +78,8 @@
         #root {
             width: 100%;
             height: 100%;
-            background-color: #FFFF00 !important;
+            min-height: 100dvh;
+            background-color: #000000 !important;
         }
         
         .material-symbols-outlined {
@@ -397,9 +401,8 @@
 
                 if (isLandscape) {
                     const tempX = distanceX;
-                    // 横画面のときはスマホの向きと画面表示のズレを解消するため、スワイプ方向の計算式を反転（-tempX）させます
                     distanceX = distanceY; 
-                    distanceY = -tempX;     
+                    distanceY = tempX;     
                 }
                 
                 const minSwipeDistance = 50;
@@ -433,6 +436,7 @@
             const textGlowClass = isTimeUp ? (isBreak ? 'text-success timer-glow-success animate-pulse' : 'text-primary timer-glow animate-pulse') : (isBreak ? 'text-success timer-glow-success' : 'text-primary timer-glow');
             const iconColorClass = isBreak ? 'text-success' : 'text-primary';
 
+            // レビュー反映：dvhを適用しつつ、ランドスケープ時はdvw/dvhを使うことでより正確にフィット
             const containerStyle = isLandscape ? {
                 transform: 'rotate(90deg) translateY(-100%)',
                 transformOrigin: 'top left',
@@ -441,13 +445,13 @@
                 position: 'absolute',
                 top: 0,
                 left: 0,
-                backgroundColor: '#FFFF00' // テスト用黄色
+                backgroundColor: '#000000'
             } : {
                 width: '100%',
                 height: '100%',
                 minHeight: '100dvh',
                 position: 'relative',
-                backgroundColor: '#FFFF00' // テスト用黄色
+                backgroundColor: '#000000'
             };
 
             const NumberAdjuster = ({ label, value, setter, max, min = 1, unit = "" }) => (
@@ -473,6 +477,7 @@
                     {isTimeUp && <div className={`absolute inset-0 ${isBreak ? 'bg-success' : 'bg-primary'} animate-gentle-pulse z-0 pointer-events-none mix-blend-screen opacity-50`}></div>}
 
                     {/* --- HEADER --- */}
+                    {/* レビュー反映：padding-topにenv(safe-area-inset-top)を追加してノッチやパンチホールに対応 */}
                     <header 
                         className="absolute top-0 w-full flex items-center justify-between px-8 pb-8 z-30 pointer-events-none"
                         style={{ paddingTop: 'max(2rem, env(safe-area-inset-top))' }}
