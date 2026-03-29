@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html class="dark" lang="ja">
+<html class="dark bg-yellow-400" lang="ja">
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
     <title>Chrono Timer</title>
     
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#000000">
+    <meta name="theme-color" content="#FFFF00">
     <link rel="apple-touch-icon" href="icon.png">
 
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -46,21 +46,21 @@
         }
     </script>
     <style>
-        /* 白い線を絶対に許さない漆黒設定 */
+        /* テスト用: 背景をすべてド派手な黄色（#FFFF00）にする */
         :root {
-            background-color: #000000 !important;
+            background-color: #FFFF00 !important;
         }
         html {
             width: 100vw;
             height: 100dvh;
-            background-color: #000000 !important;
+            background-color: #FFFF00 !important;
             margin: 0;
             padding: 0;
         }
         body {
             width: 100vw;
             height: 100dvh;
-            background-color: #000000 !important;
+            background-color: #FFFF00 !important;
             margin: 0;
             padding: 0;
             color: #adaaad;
@@ -70,13 +70,12 @@
             -webkit-user-select: none;
             -webkit-tap-highlight-color: transparent;
             overscroll-behavior: none;
-            /* スワイプをアプリで受け取るためにブラウザのスクロールを禁止 */
             touch-action: none;
         }
         #root {
             width: 100%;
             height: 100%;
-            background-color: #000000 !important;
+            background-color: #FFFF00 !important;
         }
         
         .material-symbols-outlined {
@@ -398,8 +397,9 @@
 
                 if (isLandscape) {
                     const tempX = distanceX;
+                    // 横画面のときはスマホの向きと画面表示のズレを解消するため、スワイプ方向の計算式を反転（-tempX）させます
                     distanceX = distanceY; 
-                    distanceY = tempX;     
+                    distanceY = -tempX;     
                 }
                 
                 const minSwipeDistance = 50;
@@ -441,13 +441,13 @@
                 position: 'absolute',
                 top: 0,
                 left: 0,
-                backgroundColor: '#000000'
+                backgroundColor: '#FFFF00' // テスト用黄色
             } : {
                 width: '100%',
                 height: '100%',
                 minHeight: '100dvh',
                 position: 'relative',
-                backgroundColor: '#000000'
+                backgroundColor: '#FFFF00' // テスト用黄色
             };
 
             const NumberAdjuster = ({ label, value, setter, max, min = 1, unit = "" }) => (
