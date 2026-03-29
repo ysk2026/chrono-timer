@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chrono-timer-v20';
+const CACHE_NAME = 'chrono-timer-v21';
 const ASSETS = [
   './',
   './index.html',
