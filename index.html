@@ -401,8 +401,9 @@
 
                 if (isLandscape) {
                     const tempX = distanceX;
+                    // 横画面のときは物理的な「左から右」が論理的な「下から上」になるため、符号を反転させます
                     distanceX = distanceY; 
-                    distanceY = tempX;     
+                    distanceY = -tempX;     
                 }
                 
                 const minSwipeDistance = 50;
