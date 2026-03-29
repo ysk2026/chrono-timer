@@ -261,7 +261,7 @@
                         } else if (mode === 'pomodoro') {
                             setIsRunning(true);
                         }
-                    }, 180000); // 3分 = 180,000ミリ秒
+                    }, 10000); // 3分 = 180,000ミリ秒
                 }
                 return () => {
                     if (autoStopTimer) clearTimeout(autoStopTimer);
